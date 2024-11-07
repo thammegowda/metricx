@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metricx"
+description = "MetricX"
+dynamic = ["version"]   # see [tool.setuptools.dynamic] below
+#authors = [
+#    { name="Google Translate Team", email="your.email@google.com" }
+#]
+
+dependencies = [
+    "transformers[torch]~=4.30.2",
+    "sentencepiece==0.1.99",
+    "datasets~=2.15.0",
+    "protobuf~=3.20.0",
+    "numpy~=1.26.0",
+    # all dependencies must be frozen
+    #"git+https://github.com/google-research/mt-metrics-eval", # not allowed
+]
+
+[tool.setuptools.packages.find]
+include = ["metricx23"]
+
+
+[project.urls]
+homepage = "https://github.com/google-research/metricx"
+documentation = "https://github.com/google-research/metricx"
+repository = "https://github.com/google-research/metricx"
+
+[project.scripts]
+metricx-predict = "metricx23.predict:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "metricx23.__version__"}
+# dependencies = {file = "requirements.txt"}
+#   the above option could work, but git+https://... dependency is not allowed

@@ -19,6 +19,7 @@ import json
 import os
 
 import datasets
+from pathlib import Path
 from metricx23 import models
 import torch
 import transformers
@@ -60,9 +61,16 @@ class Arguments:
       default=False,
   )
 
+  tsv: bool = dataclasses.field(
+      metadata={"help": "input_file is a TSV of [source, hypothesis, reference] \
+                fields order. When --qe is set. the last column i.e. reference is optional."},
+      default=False,
+  )
+
 
 def get_dataset(
-    input_file: str, tokenizer, max_input_length: int, device, is_qe: bool
+    input_file: str, tokenizer, max_input_length: int, device, is_qe: bool,
+    is_tsv: bool = False,
 ):
   """Gets the test dataset for prediction.
 
@@ -97,6 +105,19 @@ def get_dataset(
       )
     return example
 
+  def _make_example_from_tsv(example):
+    row = example['text'].split("\t")
+    example = {}
+    if is_qe:
+      assert len(row) >= 2, "TSV file must have at least two columns: [source, candidate] for QE metric"
+      # reference is optional at index=2 and ignored
+      example["input"] = f"candidate: {row[1]} source: {row[0]}"
+    else:
+      assert len(row) >= 3, "TSV file must have at least three columns [source, candidate, reference] for MT metric"
+      # source is ignored but assumed to exist in the input to make it consistent with the QE metric
+      example["input"] = f"candidate: {row[1]} reference: {row[2]}"
+    return example
+
   def _tokenize(example):
     return tokenizer(
         example["input"],
@@ -110,8 +131,12 @@ def get_dataset(
     example["attention_mask"] = example["attention_mask"][:-1]
     return example
 
-  ds = datasets.load_dataset("json", data_files={"test": input_file})
-  ds = ds.map(_make_input)
+  if is_tsv:
+    ds = datasets.load_dataset("text", data_files={"test": input_file})
+    ds = ds.map(_make_example_from_tsv)
+  else:
+    ds = datasets.load_dataset("json", data_files={"test": input_file})
+    ds = ds.map(_make_input)
   ds = ds.map(_tokenize)
   ds = ds.map(_remove_eos)
   ds.set_format(
@@ -133,7 +158,7 @@ def main() -> None:
   else:
     device = torch.device("cpu")
     per_device_batch_size = args.batch_size
-
+  assert per_device_batch_size > 0, "Batch size must be greater than 0."
   tokenizer = transformers.AutoTokenizer.from_pretrained(args.tokenizer)
 
   model = models.MT5ForRegression.from_pretrained(args.model_name_or_path)
@@ -146,10 +171,11 @@ def main() -> None:
       args.max_input_length,
       device,
       args.qe,
+      is_tsv=args.tsv
   )
 
   training_args = transformers.TrainingArguments(
-      output_dir=os.path.dirname(args.output_file),
+      output_dir=str(Path(args.output_file).absolute().parent),
       per_device_eval_batch_size=per_device_batch_size,
       dataloader_pin_memory=False,
   )
