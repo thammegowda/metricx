@@ -13,15 +13,16 @@ dynamic = ["version"]   # see [tool.setuptools.dynamic] below
 dependencies = [
     "transformers[torch]~=4.30.2",
     "sentencepiece==0.1.99",
-    "datasets~=2.15.0",
+    "datasets~=2.14.6",
     "protobuf~=3.20.0",
-    "numpy~=1.26.0",
+    "multiprocess>=0.70.11",
     # all dependencies must be frozen
     #"git+https://github.com/google-research/mt-metrics-eval", # not allowed
 ]
 
 [tool.setuptools.packages.find]
 include = ["metricx23"]
+exclude = ["tests"]
 
 
 [project.urls]
