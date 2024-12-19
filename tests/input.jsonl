@@ -1,0 +1,6 @@
+{"source": "Hello", "hypothesis": "Howdy", "reference": "Hola"}
+{"source": "Hello...", "hypothesis": "Howdy!", "reference": "Hola!"}
+{"source": "Hola", "reference": "Hello", "hypothesis": "Howdy"}
+{"source": "Hola...", "reference": "Hello!", "hypothesis": "Howdy?"}
+{"source": "Hola", "reference": "Hello", "hypothesis": "Howdy"}
+{"source": "Hola...", "reference": "Hello!", "hypothesis": "Howdy?"}

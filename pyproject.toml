@@ -13,15 +13,17 @@ dynamic = ["version"]   # see [tool.setuptools.dynamic] below
 dependencies = [
     "transformers[torch]~=4.30.2",
     "sentencepiece==0.1.99",
-    "datasets~=2.15.0",
+    "datasets~=2.14.6",
     "protobuf~=3.20.0",
-    "numpy~=1.26.0",
+    "multiprocess>=0.70.11",
+    "numpy~=1.25",
     # all dependencies must be frozen
     #"git+https://github.com/google-research/mt-metrics-eval", # not allowed
 ]
 
 [tool.setuptools.packages.find]
-include = ["metricx23"]
+include = ["metricx"]
+exclude = ["tests"]
 
 
 [project.urls]
@@ -30,9 +32,9 @@ documentation = "https://github.com/google-research/metricx"
 repository = "https://github.com/google-research/metricx"
 
 [project.scripts]
-metricx-predict = "metricx23.predict:main"
+metricx-predict = "metricx.predict:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "metricx23.__version__"}
+version = {attr = "metricx.__version__"}
 # dependencies = {file = "requirements.txt"}
 #   the above option could work, but git+https://... dependency is not allowed
