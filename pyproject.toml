@@ -16,6 +16,7 @@ dependencies = [
     "datasets~=2.14.6",
     "protobuf~=3.20.0",
     "multiprocess>=0.70.11",
+    "numpy~=1.25",
     # all dependencies must be frozen
     #"git+https://github.com/google-research/mt-metrics-eval", # not allowed
 ]
