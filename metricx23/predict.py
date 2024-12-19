@@ -17,6 +17,8 @@
 import dataclasses
 import json
 import os
+import argparse
+import sys
 
 import datasets
 from pathlib import Path
@@ -25,47 +27,9 @@ import torch
 import transformers
 
 
-@dataclasses.dataclass
-class Arguments:
-  """Prediction command-line arguments."""
-
-  tokenizer: str = dataclasses.field(
-      metadata={"help": "The name of the tokenizer"},
-  )
-
-  model_name_or_path: str = dataclasses.field(
-      metadata={
-          "help": (
-              "Path to pretrained model or model identifier from"
-              " huggingface.co/models"
-          )
-      },
-  )
-
-  max_input_length: int = dataclasses.field(
-      metadata={"help": "The maximum allowable input sequence length."},
-  )
-
-  batch_size: int = dataclasses.field(
-      metadata={"help": "The global prediction batch size."},
-  )
-
-  input_file: str = dataclasses.field(metadata={"help": "The input file."})
-
-  output_file: str = dataclasses.field(
-      metadata={"help": "The output file with predictions."},
-  )
-
-  qe: bool = dataclasses.field(
-      metadata={"help": "Indicates the metric is a QE metric."},
-      default=False,
-  )
-
-  tsv: bool = dataclasses.field(
-      metadata={"help": "input_file is a TSV of [source, hypothesis, reference] \
-                fields order. When --qe is set. the last column i.e. reference is optional."},
-      default=False,
-  )
+DEF_TOKENIZER = "google/mt5-xl"
+DEF_WIDTH = 5
+DEF_BATCH_SIZE = 1
 
 
 def get_dataset(
@@ -148,13 +112,47 @@ def get_dataset(
   return ds
 
 
+def parse_args():
+  # originally written using transformers.HfArgumentParser and a dataclass
+  # but we are using argparse as it is a matured lib and more common in the Python community
+  # and has more features relevant for CLI parsing (e.g. short forms)
+  # and more *nix frindly e.g. dashes instead of underscores, STDIN/STDOUT as default files
+
+  parser = argparse.ArgumentParser(
+    description="Runs inference with a MetricX model.",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+  parser.add_argument('-t', "--tokenizer", type=str, default=DEF_TOKENIZER,
+                      help="The name of the tokenizer.")
+  parser.add_argument('-m', "--model_name_or_path",  '--model', metavar='MODEL', type=str, required=True,
+                      help="Path to pretrained model or model identifier from huggingface.co/models")
+  parser.add_argument( '-x', "--max_input_length",
+                       metavar='INT', type=int, required=True,
+                      help="The maximum allowable input sequence length, e.g. 512 for metricX23 and 1024 for metricX24.")
+  parser.add_argument('-b', "--batch_size", type=int, default=DEF_BATCH_SIZE,
+                      help="The global prediction batch size.")
+  parser.add_argument('-i', "--input_file", type=str, default='-',
+                      help="The input file.")
+  parser.add_argument('-o', "--output_file", type=str, default='-',
+                      help="The output file with predictions .")
+  parser.add_argument("--qe", action="store_true", default=False,
+                      help="Indicates the metric is a QE metric.")
+  parser.add_argument("--tsv", action="store_true", default=False,
+                      help="Input_file is a TSV of [source, hypothesis, reference] fields order. \
+                        When --qe is set. the last column i.e. reference is optional. Also, produces TSV output.")
+  parser.add_argument('-w', "--width", type=int, default=5,
+                      help="The width score i.e. number of decimal points.")
+  return parser.parse_args()
+
 def main() -> None:
-  parser = transformers.HfArgumentParser(Arguments)
-  (args,) = parser.parse_args_into_dataclasses()
+  args = parse_args()
+  if args.input_file == "-":
+    args.input_file = sys.stdin
+  if args.output_file == "-":
+    args.output_file = sys.stdout
 
   if torch.cuda.is_available():
     device = torch.device("cuda")
-    per_device_batch_size = args.batch_size // torch.cuda.device_count()
+    per_device_batch_size = max(1, args.batch_size // torch.cuda.device_count())
   else:
     device = torch.device("cpu")
     per_device_batch_size = args.batch_size
@@ -174,8 +172,9 @@ def main() -> None:
       is_tsv=args.tsv
   )
 
+  output_dir = str(Path(args.output_file).absolute().parent)
   training_args = transformers.TrainingArguments(
-      output_dir=str(Path(args.output_file).absolute().parent),
+      output_dir=output_dir,
       per_device_eval_batch_size=per_device_batch_size,
       dataloader_pin_memory=False,
   )
@@ -185,17 +184,17 @@ def main() -> None:
   )
   predictions, _, _ = trainer.predict(test_dataset=ds["test"])
 
-  dirname = os.path.dirname(args.output_file)
-  if dirname:
-    os.makedirs(dirname, exist_ok=True)
 
-  with open(args.output_file, "w") as out:
+  with open(args.output_file, 'w') as out:
     for pred, example in zip(predictions, ds["test"]):
-      example["prediction"] = float(pred)
-      del example["input"]
-      del example["input_ids"]
-      del example["attention_mask"]
-      out.write(json.dumps(example) + "\n")
+      pred = example["prediction"] = float(pred)
+      if args.tsv:
+        out.write(f"{pred:.4f}\n")
+      else:
+        del example["input"]
+        del example["input_ids"]
+        del example["attention_mask"]
+        out.write(json.dumps(example) + "\n")
 
 
 if __name__ == "__main__":
