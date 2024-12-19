@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["metricx23"]
+include = ["metricx"]
 exclude = ["tests"]
 
 
@@ -32,9 +32,9 @@ documentation = "https://github.com/google-research/metricx"
 repository = "https://github.com/google-research/metricx"
 
 [project.scripts]
-metricx-predict = "metricx23.predict:main"
+metricx-predict = "metricx.predict:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "metricx23.__version__"}
+version = {attr = "metricx.__version__"}
 # dependencies = {file = "requirements.txt"}
 #   the above option could work, but git+https://... dependency is not allowed

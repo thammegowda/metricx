@@ -22,7 +22,7 @@ import sys
 
 import datasets
 from pathlib import Path
-from metricx23 import models
+from metricx import models
 import torch
 import transformers
 
@@ -32,27 +32,7 @@ DEF_WIDTH = 5
 DEF_BATCH_SIZE = 1
 
 
-def get_dataset(
-    input_file: str, tokenizer, max_input_length: int, device, is_qe: bool,
-    is_tsv: bool = False,
-):
-  """Gets the test dataset for prediction.
-
-  If `is_qe` is true, the input data must have "hypothesis" and "source" fields.
-  If it is false, there must be "hypothesis" and "reference" fields.
-
-  Args:
-    input_file: The path to the jsonl input file.
-    tokenizer: The tokenizer to use.
-    max_input_length: The maximum input sequence length.
-    device: The ID of the device to put the PyTorch tensors on.
-    is_qe: Indicates whether the metric is a QE metric or not.
-
-  Returns:
-    The dataset.
-  """
-
-  def _make_input(example):
+def make_input_23(example, is_qe):
     if is_qe:
       example["input"] = (
           "candidate: "
@@ -69,18 +49,60 @@ def get_dataset(
       )
     return example
 
-  def _make_example_from_tsv(example):
-    row = example['text'].split("\t")
-    example = {}
-    if is_qe:
-      assert len(row) >= 2, "TSV file must have at least two columns: [source, candidate] for QE metric"
-      # reference is optional at index=2 and ignored
-      example["input"] = f"candidate: {row[1]} source: {row[0]}"
-    else:
-      assert len(row) >= 3, "TSV file must have at least three columns [source, candidate, reference] for MT metric"
-      # source is ignored but assumed to exist in the input to make it consistent with the QE metric
-      example["input"] = f"candidate: {row[1]} reference: {row[2]}"
-    return example
+def make_input_24(example, is_qe):
+  if is_qe:
+    example["input"] = (
+        "source: "
+        + example["source"]
+        + " candidate: "
+        + example["hypothesis"]
+    )
+  else:
+    example["input"] = (
+        "source: "
+        + example["source"]
+        + " candidate: "
+        + example["hypothesis"]
+        + " reference: "
+        + example["reference"]
+    )
+  return example
+
+def make_example_from_tsv(example, is_qe):
+  row = example['text'].split("\t")
+  min_fields = is_qe and 2 or 3
+  assert len(row) >= min_fields, f"TSV file must have at least {min_fields} columns is_qe={is_qe}; Expected: [source, hypothesis, reference] where reference is optional when is_qe=True"
+  example = {
+    "source": row[0],
+    "hypothesis": row[1],
+  }
+
+  if not is_qe:
+    example["reference"] = row[2]
+  return example
+
+
+def get_dataset(
+    input_file: str, tokenizer, max_input_length: int, device, is_qe: bool,
+    model_id:str, is_tsv: bool = False,
+):
+  """Gets the test dataset for prediction.
+
+  If `is_qe` is true, the input data must have "hypothesis" and "source" fields.
+  If it is false, there must be "hypothesis" and "reference" fields.
+
+  Args:
+    input_file: The path to the jsonl input file.
+    tokenizer: The tokenizer to use.
+    max_input_length: The maximum input sequence length.
+    device: The ID of the device to put the PyTorch tensors on.
+    is_qe: Indicates whether the metric is a QE metric or not.
+    model_id: The model identifier.
+    is_tsv: Indicates whether the input file is a TSV file or not.
+
+  Returns:
+    The dataset.
+  """
 
   def _tokenize(example):
     return tokenizer(
@@ -97,10 +119,17 @@ def get_dataset(
 
   if is_tsv:
     ds = datasets.load_dataset("text", data_files={"test": input_file})
-    ds = ds.map(_make_example_from_tsv)
+    ds = ds.map(make_example_from_tsv, fn_kwargs={"is_qe": is_qe})
   else:
     ds = datasets.load_dataset("json", data_files={"test": input_file})
-    ds = ds.map(_make_input)
+
+
+
+  make_input = make_input_23
+  if "metricx-24-" in model_id.lower():
+    make_input = make_input_24
+
+  ds = ds.map(make_input)
   ds = ds.map(_tokenize)
   ds = ds.map(_remove_eos)
   ds.set_format(
