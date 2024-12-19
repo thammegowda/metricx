@@ -31,6 +31,22 @@ DEF_TOKENIZER = "google/mt5-xl"
 DEF_WIDTH = 5
 DEF_BATCH_SIZE = 1
 
+# print this in help for easy lookup
+KNOWN_MODELS_TXT = '''
+google/metricx-24-hybrid-large-v2p6
+google/metricx-24-hybrid-xl-v2p6
+google/metricx-24-hybrid-xxl-v2p6
+google/metricx-24-hybrid-large-v2p6-bfloat16
+google/metricx-24-hybrid-xl-v2p6-bfloat16
+google/metricx-24-hybrid-xxl-v2p6-bfloat16
+google/metricx-23-qe-large-v2p0
+google/metricx-23-qe-xl-v2p0
+google/metricx-23-qe-xxl-v2p0
+google/metricx-23-large-v2p0
+google/metricx-23-xl-v2p0
+google/metricx-23-xxl-v2p0
+'''
+KNOWN_MODELS = KNOWN_MODELS_TXT.strip().split()
 
 def make_input_23(example, is_qe):
     if is_qe:
@@ -71,7 +87,7 @@ def make_input_24(example, is_qe):
 def make_example_from_tsv(example, is_qe):
   row = example['text'].split("\t")
   min_fields = is_qe and 2 or 3
-  assert len(row) >= min_fields, f"TSV file must have at least {min_fields} columns is_qe={is_qe}; Expected: [source, hypothesis, reference] where reference is optional when is_qe=True"
+  assert len(row) >= min_fields, f"TSV file must have at least {min_fields} columns is_qe={is_qe}; Expected: [source, hypothesis, reference] and reference is optional iff is_qe=True"
   example = {
     "source": row[0],
     "hypothesis": row[1],
@@ -129,7 +145,7 @@ def get_dataset(
   if "metricx-24-" in model_id.lower():
     make_input = make_input_24
 
-  ds = ds.map(make_input)
+  ds = ds.map(make_input, fn_kwargs={"is_qe": is_qe})
   ds = ds.map(_tokenize)
   ds = ds.map(_remove_eos)
   ds.set_format(
@@ -146,10 +162,11 @@ def parse_args():
   # but we are using argparse as it is a matured lib and more common in the Python community
   # and has more features relevant for CLI parsing (e.g. short forms)
   # and more *nix frindly e.g. dashes instead of underscores, STDIN/STDOUT as default files
+  epilog = "Knwon models are:\n" + KNOWN_MODELS_TXT.strip() + "\n\nThe above list maybe incomplete. Search at huggingface.co/models for the latest list."
 
   parser = argparse.ArgumentParser(
     description="Runs inference with a MetricX model.",
-    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    formatter_class=argparse.RawDescriptionHelpFormatter, epilog=epilog)
   parser.add_argument('-t', "--tokenizer", type=str, default=DEF_TOKENIZER, metavar='MODEL_ID',
                       help="The name of the tokenizer.")
   parser.add_argument('-m', "--model_name_or_path",  '--model', metavar='MODEL', type=str, required=True,
@@ -168,6 +185,8 @@ def parse_args():
   parser.add_argument('-tsv', "--tsv", action="store_true", default=False,
                       help="Input_file is a TSV of [source, hypothesis, reference] fields order. \
                         When --qe is set. the last column i.e. reference is optional. Also, produces TSV output.")
+  parser.add_argument('--debug', action="store_true", default=False,
+                      help="Print debug information.")
   parser.add_argument('-w', "--width", type=int, default=5,
                       help="The width score i.e. number of decimal points.")
   args = parser.parse_args()
@@ -177,14 +196,18 @@ def parse_args():
       args.max_input_length = 1024
     else:
       args.max_input_length = 512
-
+  return args
 
 def main() -> None:
   args = parse_args()
   if args.input_file == "-":
     args.input_file = sys.stdin
+
+  output_dir = str(Path(args.output_file).absolute().parent)
   if args.output_file == "-":
     args.output_file = sys.stdout
+  else:
+    args.output_file = open(args.output_file, "w", encoding="utf-8")
 
   if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -205,10 +228,10 @@ def main() -> None:
       args.max_input_length,
       device,
       args.qe,
+      model_id=args.model_name_or_path,
       is_tsv=args.tsv
   )
 
-  output_dir = str(Path(args.output_file).absolute().parent)
   training_args = transformers.TrainingArguments(
       output_dir=output_dir,
       per_device_eval_batch_size=per_device_batch_size,
@@ -221,16 +244,23 @@ def main() -> None:
   predictions, _, _ = trainer.predict(test_dataset=ds["test"])
 
 
-  with open(args.output_file, 'w') as out:
+  try:
+    out = args.output_file
     for pred, example in zip(predictions, ds["test"]):
-      pred = example["prediction"] = float(pred)
+      example["prediction"] = float(pred)
       if args.tsv:
-        out.write(f"{pred:.4f}\n")
+        line = f'{example["prediction"]:.{args.width}f}'
+        if args.debug:
+          line += f'\t{example["input"]}'
+        out.write(line + "\n")
       else:
         del example["input"]
         del example["input_ids"]
         del example["attention_mask"]
         out.write(json.dumps(example) + "\n")
+  finally:
+    if out != sys.stdout:
+      out.close()
 
 
 if __name__ == "__main__":
