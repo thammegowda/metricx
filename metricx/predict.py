@@ -164,7 +164,7 @@ def parse_args():
   # but we are using argparse as it is a matured lib and more common in the Python community
   # and has more features relevant for CLI parsing (e.g. short forms)
   # and more *nix frindly e.g. dashes instead of underscores, STDIN/STDOUT as default files
-  epilog = "Knwon models are:\n" + KNOWN_MODELS_TXT.strip() + "\n\nThe above list maybe incomplete. Search at huggingface.co/models for the latest list."
+  epilog = "Knwon models are:\n" + KNOWN_MODELS_TXT.strip() + "\n\nThe above list maybe incomplete. See https://huggingface.co/models?search=metricx for the latest list."
 
   parser = argparse.ArgumentParser(
     description="Runs inference with a MetricX model.",

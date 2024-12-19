@@ -149,15 +149,70 @@ correlations with human ratings.
 
 ## Usage
 
-The `metricx24/predict.py` and `metricx23/predict.py` scripts contain examples
+The `metricx/predict.py` script contains examples
 for how to run inference on the models.
+
+```bash
+# install
+pip install .
+```
+
+This installs CLI tool named `metricx-predict` to your $PATH. Alternatively, you may also invoke `python -m metricx.predict -h`.
+
+```bash
+metricx-predict -h
+usage: metricx-predict [-h] [-t MODEL_ID] -m MODEL [-x INT] [-b INT] [-i FILE] [-o FILE] [-qe] [-tsv]
+                       [--debug] [-w WIDTH]
+
+Runs inference with a MetricX model.
+
+options:
+  -h, --help            show this help message and exit
+  -t MODEL_ID, --tokenizer MODEL_ID
+                        The name of the tokenizer.
+  -m MODEL, --model_name_or_path MODEL, --model MODEL
+                        Path to pretrained model or model identifier from huggingface.co/models
+  -x INT, --max_input_length INT
+                        The maximum allowable input sequence length, default=-1 => infer: e.g. 1024 for
+                        metricx23 and 1536 for metricx24.
+  -b INT, --batch_size INT
+                        The global prediction batch size.
+  -i FILE, --input_file FILE
+                        The input file.
+  -o FILE, --output_file FILE
+                        The output file with predictions .
+  -qe, --qe             Indicates the metric is a QE metric.
+  -tsv, --tsv           Input_file is a TSV of [source, hypothesis, reference] fields order. When --qe is
+                        set. the last column i.e. reference is optional. Also, produces TSV output.
+  --debug               Print debug information.
+  -w WIDTH, --width WIDTH
+                        The width score i.e. number of decimal points.
+
+Knwon models are:
+google/metricx-24-hybrid-large-v2p6
+google/metricx-24-hybrid-xl-v2p6
+google/metricx-24-hybrid-xxl-v2p6
+google/metricx-24-hybrid-large-v2p6-bfloat16
+google/metricx-24-hybrid-xl-v2p6-bfloat16
+google/metricx-24-hybrid-xxl-v2p6-bfloat16
+google/metricx-23-qe-large-v2p0
+google/metricx-23-qe-xl-v2p0
+google/metricx-23-qe-xxl-v2p0
+google/metricx-23-large-v2p0
+google/metricx-23-xl-v2p0
+google/metricx-23-xxl-v2p0
+
+The above list maybe incomplete. Search at huggingface.co/models for the latest list.
+
+```
+
 
 ### Reference-Based
 
 Example usage for a reference-based MetricX-24 model:
 
 ```bash
-python -m metricx24.predict \
+python -m metricx.predict \
   --tokenizer google/mt5-xl \
   --model_name_or_path google/metricx-24-hybrid-xl-v2p6 \
   --max_input_length 1536 \
@@ -175,7 +230,7 @@ jsonl will be parallel to `input.jsonl` but additionally contain a
 Example usage for a reference-based MetricX-23 model:
 
 ```bash
-python -m metricx23.predict \
+python -m metricx.predict \
   --tokenizer google/mt5-xl \
   --model_name_or_path google/metricx-23-xl-v2p0 \
   --max_input_length 1024 \
@@ -197,7 +252,7 @@ unpredictable behavior.
 Example usage for a reference-free MetricX-24 model:
 
 ```bash
-python -m metricx24.predict \
+python -m metricx.predict \
   --tokenizer google/mt5-xl \
   --model_name_or_path google/metricx-24-hybrid-xl-v2p6 \
   --max_input_length 1536 \
@@ -218,7 +273,7 @@ score.
 Example usage for a reference-free MetricX-23 model:
 
 ```bash
-python -m metricx23.predict \
+python -m metricx.predict \
   --tokenizer google/mt5-xl \
   --model_name_or_path google/metricx-23-qe-xl-v2p0 \
   --max_input_length 1024 \
@@ -235,7 +290,7 @@ JSON object per line with `"source"` and `"hypothesis"` fields (no
 
 ## Meta-Evaluation
 
-The `metricx23/evaluate.py` and `metricx24/evaluate.py` scripts contain code to
+The `metricx/evaluate_23.py` and `metricx/evaluate_24.py` scripts contain code to
 calculate various correlations between the MetricX scores and MQM ratings of
 translation quality using the
 [MT Metrics Eval](https://github.com/google-research/mt-metrics-eval) library.
@@ -243,7 +298,7 @@ translation quality using the
 Example usage for a MetricX-24 model:
 
 ```bash
-python -m metricx24.evaluate \
+python -m metricx.evaluate_24 \
   --dataset wmt24 \
   --lp en-es \
   --input_file input.jsonl \
@@ -253,7 +308,7 @@ python -m metricx24.evaluate \
 Example usage for a MetricX-23 model:
 
 ```bash
-python -m metricx23.evaluate \
+python -m metricx.evaluate_23 \
   --dataset wmt22 \
   --lp en-de \
   --input_file input.jsonl \
@@ -330,17 +385,17 @@ MetricX-23 (WMT'22 zh-en):
 | MetricX-23-QE-Large   | 0.758        | 0.904       | 0.522       | 0.529       |
 
 
-The `metricx24/evaluate_wmt24.py` script re-calculates the average correlation
+The `metricx/evaluate_wmt24.py` script re-calculates the average correlation
 score for MetricX-24 that was used to rank submissions from the
 [WMT'24 Metrics Shared Task](https://www2.statmt.org/wmt24/pdf/2024.wmt-1.2.pdf).
-Similarly, the `metricx23/evaluate_wmt23.py` script re-calculates the average
+Similarly, the `metricx/evaluate_wmt23.py` script re-calculates the average
 correlation score for MetricX-23 that was used to rank submissions from the
 [WMT'23 Metrics Shared Task](https://www2.statmt.org/wmt23/pdf/2023.wmt-1.51.pdf).
 
 Example usage for a MetricX-24 model:
 
 ```bash
-python -m metricx24.evaluate_wmt24 \
+python -m metricx.evaluate_wmt24 \
   --en_de predictions_ende.jsonl \
   --en_es predictions_enes.jsonl \
   --ja_zh predictions_jazh.jsonl \
@@ -350,7 +405,7 @@ python -m metricx24.evaluate_wmt24 \
 Example usage for a MetricX-23 model:
 
 ```bash
-python -m metricx23.evaluate_wmt23 \
+python -m metricx.evaluate_wmt23 \
   --en_de predictions_ende.jsonl \
   --he_en predictions_heen.jsonl \
   --zh_en predictions_zhen.jsonl \
