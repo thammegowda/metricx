@@ -150,27 +150,34 @@ def parse_args():
   parser = argparse.ArgumentParser(
     description="Runs inference with a MetricX model.",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  parser.add_argument('-t', "--tokenizer", type=str, default=DEF_TOKENIZER,
+  parser.add_argument('-t', "--tokenizer", type=str, default=DEF_TOKENIZER, metavar='MODEL_ID',
                       help="The name of the tokenizer.")
   parser.add_argument('-m', "--model_name_or_path",  '--model', metavar='MODEL', type=str, required=True,
                       help="Path to pretrained model or model identifier from huggingface.co/models")
   parser.add_argument( '-x', "--max_input_length",
-                       metavar='INT', type=int, required=True,
-                      help="The maximum allowable input sequence length, e.g. 512 for metricX23 and 1024 for metricX24.")
+                       metavar='INT', type=int, default=-1,
+                      help="The maximum allowable input sequence length, default=-1 => infer: e.g. 512 for metricX23 and 1024 for metricX24.")
   parser.add_argument('-b', "--batch_size", type=int, default=DEF_BATCH_SIZE,
-                      help="The global prediction batch size.")
+                      metavar='INT', help="The global prediction batch size.")
   parser.add_argument('-i', "--input_file", type=str, default='-',
-                      help="The input file.")
+                      metavar='FILE', help="The input file.")
   parser.add_argument('-o', "--output_file", type=str, default='-',
-                      help="The output file with predictions .")
-  parser.add_argument("--qe", action="store_true", default=False,
+                      metavar='FILE', help="The output file with predictions .")
+  parser.add_argument('-qe', "--qe", action="store_true", default=False,
                       help="Indicates the metric is a QE metric.")
-  parser.add_argument("--tsv", action="store_true", default=False,
+  parser.add_argument('-tsv', "--tsv", action="store_true", default=False,
                       help="Input_file is a TSV of [source, hypothesis, reference] fields order. \
                         When --qe is set. the last column i.e. reference is optional. Also, produces TSV output.")
   parser.add_argument('-w', "--width", type=int, default=5,
                       help="The width score i.e. number of decimal points.")
-  return parser.parse_args()
+  args = parser.parse_args()
+
+  if args.max_input_length == -1:
+    if "metricx-24-" in args.model_name_or_path.lower():
+      args.max_input_length = 1024
+    else:
+      args.max_input_length = 512
+
 
 def main() -> None:
   args = parse_args()
