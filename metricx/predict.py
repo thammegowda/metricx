@@ -30,6 +30,8 @@ import transformers
 DEF_TOKENIZER = "google/mt5-xl"
 DEF_WIDTH = 5
 DEF_BATCH_SIZE = 1
+MAX_LEN_METRICX23 = 1024
+MAX_LEN_METRICX24 = 1536
 
 # print this in help for easy lookup
 KNOWN_MODELS_TXT = '''
@@ -173,7 +175,7 @@ def parse_args():
                       help="Path to pretrained model or model identifier from huggingface.co/models")
   parser.add_argument( '-x', "--max_input_length",
                        metavar='INT', type=int, default=-1,
-                      help="The maximum allowable input sequence length, default=-1 => infer: e.g. 512 for metricX23 and 1024 for metricX24.")
+                      help=f"The maximum allowable input sequence length, default=-1 => infer: e.g. {MAX_LEN_METRICX23} for metricx23 and {MAX_LEN_METRICX24} for metricx24.")
   parser.add_argument('-b', "--batch_size", type=int, default=DEF_BATCH_SIZE,
                       metavar='INT', help="The global prediction batch size.")
   parser.add_argument('-i', "--input_file", type=str, default='-',
@@ -193,9 +195,9 @@ def parse_args():
 
   if args.max_input_length == -1:
     if "metricx-24-" in args.model_name_or_path.lower():
-      args.max_input_length = 1024
+      args.max_input_length = MAX_LEN_METRICX24
     else:
-      args.max_input_length = 512
+      args.max_input_length = MAX_LEN_METRICX23
   return args
 
 def main() -> None:
