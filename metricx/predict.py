@@ -14,17 +14,18 @@
 # limitations under the License.
 """Runs inference with a MetricX model."""
 
-import dataclasses
+
 import json
-import os
 import argparse
 import sys
 
 import datasets
 from pathlib import Path
+from typing import Iterator
 from metricx import models
 import torch
 import transformers
+from functools import partial
 
 
 DEF_TOKENIZER = "google/mt5-xl"
@@ -32,6 +33,7 @@ DEF_WIDTH = 5
 DEF_BATCH_SIZE = 1
 MAX_LEN_METRICX23 = 1024
 MAX_LEN_METRICX24 = 1536
+TSV_FIELDS = ["source", "hypothesis", "reference"]
 
 # print this in help for easy lookup
 KNOWN_MODELS_TXT = '''
@@ -86,18 +88,23 @@ def make_input_24(example, is_qe):
     )
   return example
 
-def make_example_from_tsv(example, is_qe):
-  row = example['text'].split("\t")
-  min_fields = is_qe and 2 or 3
-  assert len(row) >= min_fields, f"TSV file must have at least {min_fields} columns is_qe={is_qe}; Expected: [source, hypothesis, reference] and reference is optional iff is_qe=True"
-  example = {
-    "source": row[0],
-    "hypothesis": row[1],
-  }
+def load_data_file(input_file: str, is_tsv: bool) -> Iterator[dict]:
+  try:
+    if not input_file or input_file == "-":
+      inp = sys.stdin
+    else:
+      inp = open(input_file, "r", encoding="utf-8")
 
-  if not is_qe:
-    example["reference"] = row[2]
-  return example
+    for line in inp:
+      if is_tsv:
+        parts = line.split("\t")
+        example = {k:v for k, v in zip(TSV_FIELDS, parts)}
+      else:
+        example = json.loads(line)
+      yield example
+  finally:
+    if inp != sys.stdin:
+      inp.close()
 
 
 def get_dataset(
@@ -135,13 +142,22 @@ def get_dataset(
     example["attention_mask"] = example["attention_mask"][:-1]
     return example
 
-  if is_tsv:
-    ds = datasets.load_dataset("text", data_files={"test": input_file})
-    ds = ds.map(make_example_from_tsv, fn_kwargs={"is_qe": is_qe})
+  def _map_tsv_to_dict(example):
+    parts = example.pop("text").split("\t")
+    for k, v in zip(TSV_FIELDS, parts):
+      example[k] = v
+    return example
+
+  if input_file == "-":
+    ds = datasets.Dataset.from_generator(
+        load_data_file, streaming=True,
+        gen_kwargs={"input_file": input_file, "is_tsv": is_tsv})
   else:
-    ds = datasets.load_dataset("json", data_files={"test": input_file})
-
-
+    ds = datasets.load_dataset(is_tsv and "text" or "json", data_files={"test": input_file})
+    ds = ds["test"]
+    ds._output_all_columns = True
+    if is_tsv:
+      ds = ds.map(_map_tsv_to_dict)
 
   make_input = make_input_23
   if "metricx-24-" in model_id.lower():
@@ -150,13 +166,17 @@ def get_dataset(
   ds = ds.map(make_input, fn_kwargs={"is_qe": is_qe})
   ds = ds.map(_tokenize)
   ds = ds.map(_remove_eos)
-  ds.set_format(
-      type="torch",
-      columns=["input_ids", "attention_mask"],
-      device=device,
-      output_all_columns=True,
-  )
+  ds = ds.with_format("torch")
   return ds
+
+def data_collator(items, pad_id, device) -> dict:
+  max_len = max(len(it["input_ids"]) for it in items)
+  input_ids = torch.full((len(items), max_len), pad_id, dtype=torch.long, device=device)
+  attention_mask = torch.zeros((len(items), max_len), dtype=torch.uint8, device=device)
+  for idx, it in enumerate(items):
+    input_ids[idx, :len(it["input_ids"])] = it["input_ids"]
+    attention_mask[idx, :len(it["attention_mask"])] = it["attention_mask"]
+  return dict(input_ids=input_ids, attention_mask=attention_mask)
 
 
 def parse_args():
@@ -202,14 +222,7 @@ def parse_args():
 
 def main() -> None:
   args = parse_args()
-  if args.input_file == "-":
-    args.input_file = sys.stdin
-
   output_dir = str(Path(args.output_file).absolute().parent)
-  if args.output_file == "-":
-    args.output_file = sys.stdout
-  else:
-    args.output_file = open(args.output_file, "w", encoding="utf-8")
 
   if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -219,10 +232,6 @@ def main() -> None:
     per_device_batch_size = args.batch_size
   assert per_device_batch_size > 0, "Batch size must be greater than 0."
   tokenizer = transformers.AutoTokenizer.from_pretrained(args.tokenizer)
-
-  model = models.MT5ForRegression.from_pretrained(args.model_name_or_path)
-  model.to(device)
-  model.eval()
 
   ds = get_dataset(
       args.input_file,
@@ -234,6 +243,10 @@ def main() -> None:
       is_tsv=args.tsv
   )
 
+  model = models.MT5ForRegression.from_pretrained(args.model_name_or_path)
+  model.to(device)
+  model.eval()
+
   training_args = transformers.TrainingArguments(
       output_dir=output_dir,
       per_device_eval_batch_size=per_device_batch_size,
@@ -242,24 +255,34 @@ def main() -> None:
   trainer = transformers.Trainer(
       model=model,
       args=training_args,
+      data_collator=partial(data_collator, pad_id=tokenizer.pad_token_id, device=device),
   )
-  predictions, _, _ = trainer.predict(test_dataset=ds["test"])
-
+  predictions, _, _ = trainer.predict(test_dataset=ds)
 
   try:
-    out = args.output_file
-    for pred, example in zip(predictions, ds["test"]):
-      example["prediction"] = float(pred)
-      if args.tsv:
-        line = f'{example["prediction"]:.{args.width}f}'
-        if args.debug:
-          line += f'\t{example["input"]}'
-        out.write(line + "\n")
-      else:
-        del example["input"]
-        del example["input_ids"]
-        del example["attention_mask"]
-        out.write(json.dumps(example) + "\n")
+    if args.output_file == "-":
+      out = sys.stdout
+    else:
+      out = open(args.output_file, "w", encoding="utf-8")
+
+    if args.input_file == "-":
+      # streaming mode: not possible to read input again
+      for pred in predictions:
+        out.write(f'{pred:.{args.width}f}\n')
+    else:
+      # inputs are available in the dataset
+      for pred, example in zip(predictions, ds):
+        example["prediction"] = float(pred)
+        if args.tsv:
+          line = f'{example["prediction"]:.{args.width}f}'
+          if args.debug:
+            line += f'\t{example["input"]}'
+          out.write(line + "\n")
+        else:
+          del example["input"]
+          del example["input_ids"]
+          del example["attention_mask"]
+          out.write(json.dumps(example) + "\n")
   finally:
     if out != sys.stdout:
       out.close()
